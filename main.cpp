@@ -14,7 +14,7 @@
 #include "lsl_cpp.h"
 
 // Defines
-const float bufferInSeconds = 1; // buffer size in seconds for Emotiv
+const float bufferInSeconds = 2; // buffer size in seconds for Emotiv
 
 // List of available channels
 IEE_DataChannel_t channelList[] =
@@ -129,6 +129,7 @@ int main()
 				IEE_DataUpdateHandle(0, dataStream); // update data stream
 				unsigned int sampleCount = 0;
 				IEE_DataGetNumberOfSample(dataStream, &sampleCount);
+				std::cout << "Sample Count: " << std::to_string(sampleCount) << std::endl;
 
 				// Proceed when there are samples
 				if (sampleCount != 0) {
@@ -164,8 +165,8 @@ int main()
 					delete buffer;
 				}
 
-				// Sleep for a half second to collect further data
-				std::this_thread::sleep_for(std::chrono::milliseconds(500));
+				// Sleep for a second to collect further data
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 			}
 		}
 
