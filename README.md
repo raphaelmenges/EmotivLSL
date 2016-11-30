@@ -1,0 +1,1 @@
+Compiles only with Visual Studio 2015 as 32bit project.
