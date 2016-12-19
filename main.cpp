@@ -24,6 +24,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <limits>
 
 // Including for Emotiv
 #include "IEmoStateDLL.h"
@@ -35,9 +36,9 @@
 #include "lsl_cpp.h"
 
 // Defines
-const float bufferInSeconds = 2; // buffer size in seconds for raw Emotiv data
+const float bufferInSeconds = 2; // buffer size in seconds for raw EEG data
 const int sampleRateEEG = 128; // given by device
-const int sampleRateFacialExpression = 1;
+const long long sleepDurationInMiliseconds = 50; 
 
 // List of EEG channels
 IEE_DataChannel_t channelList[] =
@@ -117,14 +118,21 @@ unsigned int channelCount = sizeof(channelList) / sizeof(IEE_DataChannel_t);
 // Extract count of facial expressions
 unsigned int facialExpressionCount = sizeof(facialExpressionList) / sizeof(IEE_FacialExpressionAlgo_t);
 
+// Counter for EEG in order to collect samples from a complete second
+float EEGcounter = 0.f; // seconds
+
 // Output streams
 lsl::stream_info streamInfoEEG("EmotivLSL_EEG", "EEG", channelCount, sampleRateEEG, lsl::cf_float32, "source_id");
-lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "EEG", facialExpressionCount, sampleRateFacialExpression, lsl::cf_float32, "source_id");
+lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "VALUE", facialExpressionCount, lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
+lsl::stream_info streamInfoPerformanceMetrics("EmotivLSL_PerformanceMetrics", "VALUE", 20, lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
 
 // Variables
 bool readyToCollect = false; // indicator whether data collection can begin
 int error = 0; // storage for error code
 unsigned int userID = 0; // id of user
+
+// Forward declaration
+void CaculateScale(double& rawScore, double& maxScale, double& minScale, double& scaledScore);
 
 // Main function
 int main()
@@ -186,6 +194,71 @@ int main()
 				.append_child_value("label", facialExpressionLabel);
 		}
 
+		// Create stream outlet with information header
+		lsl::stream_outlet outletFacialExpression(streamInfoFacialExpression);
+
+		// #######################################
+		// ### PERFORMANCE METRICS PREPARATION ###
+		// #######################################
+
+		// Start filling information about stream
+		streamInfoPerformanceMetrics.desc().append_child_value("manufacturer", "Emotiv");
+
+		// Save information about performance metrics
+		lsl::xml_element performanceMetrics = streamInfoPerformanceMetrics.desc().append_child("channels");
+
+		// Stress
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Stress raw score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Stress min score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Stress max score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Stress scaled score");
+
+		// Boredom
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Engagement boredom raw score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Engagement boredom min score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Engagement boredom max score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Engagement boredom scaled score");
+
+		// Relaxation
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Relaxation raw score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Relaxation min score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Relaxation max score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Relaxation scaled score");
+
+		// Excitement
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Excitement raw score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Excitement min score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Excitement max score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Excitement scaled score");
+
+		// Interest
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Interest raw score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Interest min score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Interest max score");
+		performanceMetrics.append_child("channel")
+			.append_child_value("label", "Interest scaled score");
+
+		lsl::stream_outlet outletPerformanceMetrics(streamInfoPerformanceMetrics);
+
 		// #######################
 		// ### ENTER MAIN LOOP ###
 		// #######################
@@ -194,13 +267,13 @@ int main()
 		while (!_kbhit())
 		{
 			// Fetch current Emotiv state
-			error = IEE_EngineGetNextEvent(eEvent);
+			error = IEE_EngineGetNextEvent(eEvent); // fills eEvent
 
 			// When state is ok, check whether ready to collect
 			if (error == EDK_OK)
 			{
-				// Extract event
-				IEE_Event_t eventType = IEE_EmoEngineEventGetType(eEvent);
+				// Extract current event
+				IEE_Event_t eventType = IEE_EmoEngineEventGetType(eEvent); // fills eventType
 
 				// Event tells about added user
 				if (eventType == IEE_UserAdded)
@@ -209,6 +282,14 @@ int main()
 					IEE_DataAcquisitionEnable(userID, true);
 					readyToCollect = true;
 					std::cout << "User Successfully Added" << std::endl;
+				} // TODO: what to do when user removed etc
+
+				// Check emotiv state
+				bool eStateUpdated = false;
+				if (eventType == IEE_EmoStateUpdated)
+				{
+					IEE_EmoEngineEventGetEmoState(eEvent, eState); // fills eState
+					eStateUpdated = true;
 				}
 
 				// Since it is ready to collect, do it
@@ -218,44 +299,53 @@ int main()
 					// ### EEG STREAM EXECUTION ###
 					// ############################
 
-					// Fetch samples and their count
-					IEE_DataUpdateHandle(0, dataStream); // update data stream
-					unsigned int sampleCount = 0;
-					IEE_DataGetNumberOfSample(dataStream, &sampleCount);
-					std::cout << "Sample Count: " << std::to_string(sampleCount) << std::endl;
+					// Collect data after one seconds
+					if (EEGcounter >= 1.f)
+					{
+						// Fetch samples and their count
+						IEE_DataUpdateHandle(0, dataStream); // update data stream
+						unsigned int sampleCount = 0;
+						IEE_DataGetNumberOfSample(dataStream, &sampleCount);
+						std::cout << "EEG Sample Count: " << std::to_string(sampleCount) << std::endl; // should be 128
 
-					// Proceed when there are samples
-					if (sampleCount != 0) {
+						// Proceed when there are samples
+						if (sampleCount != 0) {
 
-						// Prepare local buffer for data
-						double ** buffer = new double*[channelCount]; // create buffer for channel data
-						for (int i = 0; i < (int)channelCount; i++)
-						{
-							buffer[i] = new double[sampleCount];
-						}
-
-						// Fetch data
-						IEE_DataGetMultiChannels(dataStream, channelList, channelCount, buffer, sampleCount);
-
-						// Output samples to LabStreamingLayer
-						for (int sampleIdx = 0; sampleIdx < (int)sampleCount; sampleIdx++) // go over samples
-						{
-							// Copy data to std vector (some overhead but looks nicer)
-							std::vector<float> values;
-							for (int channelIdx = 0; channelIdx < (int)channelCount; channelIdx++) // go over channels
+							// Prepare local buffer for data
+							double ** buffer = new double*[channelCount]; // create buffer for channel data
+							for (int i = 0; i < (int)channelCount; i++)
 							{
-								values.push_back((float)buffer[channelIdx][sampleIdx]);
+								buffer[i] = new double[sampleCount];
 							}
-							outletEEG.push_sample(values);
+
+							// Fetch data
+							IEE_DataGetMultiChannels(dataStream, channelList, channelCount, buffer, sampleCount);
+
+							// Output samples to LabStreamingLayer
+							for (int sampleIdx = 0; sampleIdx < (int)sampleCount; sampleIdx++) // go over samples
+							{
+								// Copy data to std vector (some overhead but looks nicer)
+								std::vector<float> values;
+								for (int channelIdx = 0; channelIdx < (int)channelCount; channelIdx++) // go over channels
+								{
+									values.push_back((float)buffer[channelIdx][sampleIdx]);
+								}
+								outletEEG.push_sample(values);
+							}
+
+							// Delete buffer
+							for (int i = 0; i < (int)channelCount; i++)
+							{
+								delete buffer[i];
+							}
+							delete buffer;
 						}
 
-						// Delete buffer
-						for (int i = 0; i < (int)channelCount; i++)
-						{
-							delete buffer[i];
-						}
-						delete buffer;
+						EEGcounter -= 1.f;
 					}
+					
+					// Increment eeg counter by sleep time
+					EEGcounter += 1000.f / sleepDurationInMiliseconds;
 
 					// ##########################################
 					// ### FACIAL EXPRESSION STREAM EXECUTION ###
@@ -264,8 +354,107 @@ int main()
 					// TODO
 					// Look at: examples/FacialExpressionDemo
 
+					// #######################################
+					// ### PERFORMANCE METRICS PREPARATION ###
+					// #######################################
+
+					if (eStateUpdated)
+					{
+						std::vector<float> values;
+						double rawScore = 0;
+						double minScale = 0;
+						double maxScale = 0;
+						double scaledScore = 0;
+
+						// Stress
+						IS_PerformanceMetricGetStressModelParams(eState, &rawScore, &minScale,
+							&maxScale);
+						values.push_back(rawScore);
+						values.push_back(minScale);
+						values.push_back(maxScale);
+						if (minScale == maxScale)
+						{
+							values.push_back(std::numeric_limits<double>::quiet_NaN());
+						}
+						else
+						{
+							CaculateScale(rawScore, maxScale, minScale, scaledScore);
+							values.push_back(scaledScore);
+						}
+
+						// Boredom
+						IS_PerformanceMetricGetEngagementBoredomModelParams(eState, &rawScore,
+							&minScale, &maxScale);
+						values.push_back(rawScore);
+						values.push_back(minScale);
+						values.push_back(maxScale);
+						if (minScale == maxScale)
+						{
+							values.push_back(std::numeric_limits<double>::quiet_NaN());
+						}
+						else
+						{
+							CaculateScale(rawScore, maxScale, minScale, scaledScore);
+							values.push_back(scaledScore);
+						}
+
+						// Relaxation
+						IS_PerformanceMetricGetRelaxationModelParams(eState, &rawScore,
+							&minScale, &maxScale);
+						values.push_back(rawScore);
+						values.push_back(minScale);
+						values.push_back(maxScale);
+						if (minScale == maxScale)
+						{
+							values.push_back(std::numeric_limits<double>::quiet_NaN());
+						}
+						else
+						{
+							CaculateScale(rawScore, maxScale, minScale, scaledScore);
+							values.push_back(scaledScore);
+						}
+
+						// Excitement
+						IS_PerformanceMetricGetInstantaneousExcitementModelParams(eState,
+							&rawScore, &minScale,
+							&maxScale);
+						values.push_back(rawScore);
+						values.push_back(minScale);
+						values.push_back(maxScale);
+						if (minScale == maxScale)
+						{
+							values.push_back(std::numeric_limits<double>::quiet_NaN());
+						}
+						else {
+							CaculateScale(rawScore, maxScale, minScale, scaledScore);
+							values.push_back(scaledScore);
+						}
+
+						// Interest
+						IS_PerformanceMetricGetInterestModelParams(eState, &rawScore,
+							&minScale, &maxScale);
+						values.push_back(rawScore);
+						values.push_back(minScale);
+						values.push_back(maxScale);
+						if (minScale == maxScale)
+						{
+							values.push_back(std::numeric_limits<double>::quiet_NaN());
+						}
+						else {
+							CaculateScale(rawScore, maxScale, minScale, scaledScore);
+							values.push_back(scaledScore);
+						}
+
+						// Push back sample
+						outletPerformanceMetrics.push_sample(values);
+					}
+
+					// #############
+					// ### SLEEP ###
+					// #############
+
 					// Sleep for a second to collect further data
-					std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+					std::this_thread::sleep_for(std::chrono::milliseconds(sleepDurationInMiliseconds));
 				}
 			}
 		}
@@ -286,4 +475,20 @@ int main()
 	IEE_EmoEngineEventFree(eEvent);
 
 	return 0;
+}
+
+void CaculateScale(double& rawScore, double& maxScale, double& minScale, double& scaledScore)
+{
+	if (rawScore < minScale)
+	{
+		scaledScore = 0;
+	}
+	else if (rawScore > maxScale)
+	{
+		scaledScore = 1;
+	}
+	else
+	{
+		scaledScore = (rawScore - minScale) / (maxScale - minScale);
+	}
 }
