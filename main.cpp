@@ -78,7 +78,7 @@ const std::vector<std::string> channelLabels =
 	"AF4",
 };
 
-// Corresponding facial expression labels
+// Facial expression labels
 const std::vector<std::string> facialExpressionLabels
 {
 	"BLINK",
@@ -95,9 +95,42 @@ const std::vector<std::string> facialExpressionLabels
 	"NEUTRAL"
 };
 
+// Performance metrics labels
+const std::vector<std::string> performanceMetricsLabels
+{
+	// Stress
+	"STRESS_RAW_SCORE",
+	"STRESS_MIN_SCORE",
+	"STRESS_MAX_SCORE",
+	"STRESS_SCALED_SCORE",
+
+	// Boredom
+	"ENGAGEMENT_BOREDOM_RAW_SCORE",
+	"ENGAGEMENT_BOREDOM_MIN_SCORE",
+	"ENGAGEMENT_BOREDOM_MAX_SCORE",
+	"ENGAGEMENT_BOREDOM_SCALED_SCORE",
+
+	// Relaxation
+	"RELAXATION_RAW_SCORE",
+	"RELAXATION_MIN_SCORE",
+	"RELAXATION_MAX_SCORE",
+	"RELAXATION_SCALED_SCORE",
+
+	// Excitement
+	"EXCITEMENT_RAW_SCORE",
+	"EXCITEMENT_MIN_SCORE",
+	"EXCITEMENT_MAX_SCORE",
+	"EXCITEMENT_SCALED_SCORE",
+
+	// Interest
+	"INTEREST_RAW_SCORE",
+	"INTEREST_MIN_SCORE",
+	"INTEREST_MAX_SCORE",
+	"INTEREST_SCALED_SCORE"
+};
+
 // Extract EEG channel count
 unsigned int channelCount = sizeof(channelList) / sizeof(IEE_DataChannel_t);
-
 
 // Counter for EEG in order to collect samples from a complete second
 float EEGcounter = 0.f; // seconds
@@ -105,7 +138,7 @@ float EEGcounter = 0.f; // seconds
 // Output streams
 lsl::stream_info streamInfoEEG("EmotivLSL_EEG", "EEG", channelCount, sampleRateEEG, lsl::cf_float32, "source_id");
 lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "VALUE", facialExpressionLabels.size(), lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
-lsl::stream_info streamInfoPerformanceMetrics("EmotivLSL_PerformanceMetrics", "VALUE", 20, lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
+lsl::stream_info streamInfoPerformanceMetrics("EmotivLSL_PerformanceMetrics", "VALUE", performanceMetricsLabels.size(), lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
 
 // Variables
 bool readyToCollect = false; // indicator whether data collection can begin
@@ -187,57 +220,13 @@ int main()
 
 		// Save information about performance metrics
 		lsl::xml_element performanceMetrics = streamInfoPerformanceMetrics.desc().append_child("channels");
+		for (auto performanceMetricsLabel : performanceMetricsLabels)
+		{
+			performanceMetrics.append_child("channel")
+				.append_child_value("label", performanceMetricsLabel);
+		}
 
-		// Stress
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Stress raw score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Stress min score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Stress max score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Stress scaled score");
-
-		// Boredom
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Engagement boredom raw score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Engagement boredom min score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Engagement boredom max score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Engagement boredom scaled score");
-
-		// Relaxation
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Relaxation raw score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Relaxation min score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Relaxation max score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Relaxation scaled score");
-
-		// Excitement
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Excitement raw score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Excitement min score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Excitement max score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Excitement scaled score");
-
-		// Interest
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Interest raw score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Interest min score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Interest max score");
-		performanceMetrics.append_child("channel")
-			.append_child_value("label", "Interest scaled score");
-
+		// Create stream outlet with information header
 		lsl::stream_outlet outletPerformanceMetrics(streamInfoPerformanceMetrics);
 
 		// #######################
@@ -342,84 +331,35 @@ int main()
 					{
 						std::vector<float> values;
 
-						// Get face information
+						// Get face status
 						IEE_FacialExpressionAlgo_t upperFaceType = IS_FacialExpressionGetUpperFaceAction(eState);
 						IEE_FacialExpressionAlgo_t lowerFaceType = IS_FacialExpressionGetLowerFaceAction(eState);
 						float upperFaceAmp = IS_FacialExpressionGetUpperFaceActionPower(eState);
 						float lowerFaceAmp = IS_FacialExpressionGetLowerFaceActionPower(eState);
 
 						// Blink
-						if (IS_FacialExpressionIsBlink(eState))
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back(IS_FacialExpressionIsBlink(eState) ? 1.f : 0.f);
 
 						// Wink left
-						if (IS_FacialExpressionIsLeftWink(eState))
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back(IS_FacialExpressionIsLeftWink(eState) ? 1.f : 0.f);
 
 						// Wink right
-						if (IS_FacialExpressionIsRightWink(eState))
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back(IS_FacialExpressionIsRightWink(eState) ? 1.f : 0.f);
 
 						// Suprise
-						if (upperFaceAmp > 0.0 && upperFaceType == FE_SURPRISE)
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back((upperFaceAmp > 0.0 && upperFaceType == FE_SURPRISE) ? 1.f : 0.f);
 
 						// Frown
-						if (upperFaceAmp > 0.0 && upperFaceType == FE_FROWN)
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back((upperFaceAmp > 0.0 && upperFaceType == FE_FROWN) ? 1.f : 0.f);
 
 						// Clench
-						if (lowerFaceAmp > 0.0 && lowerFaceType = FE_CLENCH)
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back((lowerFaceAmp > 0.0 && lowerFaceType = FE_CLENCH) ? 1.f : 0.f);
 
 						// Smile
-						if (lowerFaceAmp > 0.0 && lowerFaceType = FE_SMILE)
-						{
-							values.push_back(1.f);
-						}
-						else
-						{
-							values.push_back(0.f);
-						}
+						values.push_back((lowerFaceAmp > 0.0 && lowerFaceType = FE_SMILE) ? 1.f : 0.f);
 
 						// Neutral
-						bool neutral = true; // if nothing else is set, set it to neutral
+						bool neutral = true; // if nothing else is set, set neutral to one
 						for (const float& rValue : values) { if (rValue > 0.f) { neutral = false; break; } }
 						if(neutral)
 						{
