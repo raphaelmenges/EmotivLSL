@@ -78,52 +78,33 @@ const std::vector<std::string> channelLabels =
 	"AF4",
 };
 
-// List of facial expressions
-IEE_FacialExpressionAlgo_t facialExpressionList[] =
-{
-	FE_NEUTRAL,
-	FE_BLINK,
-	FE_WINK_LEFT,
-	FE_WINK_RIGHT,
-	FE_HORIEYE,
-	FE_SURPRISE,
-	FE_FROWN,
-	FE_SMILE,
-	FE_CLENCH,
-	FE_LAUGH,
-	FE_SMIRK_LEFT,
-	FE_SMIRK_RIGHT
-};
-
 // Corresponding facial expression labels
 const std::vector<std::string> facialExpressionLabels
 {
-	"NEUTRAL",
 	"BLINK",
 	"WINK_LEFT",
 	"WINK_RIGHT",
-	"HORIEYE",
+	// "HORIEYE",
 	"SURPRISE",
 	"FROWN",
-	"SMILE",
 	"CLENCH",
-	"LAUGH",
-	"SMIRK_LEFT",
-	"SMIRK_RIGHT",
+	"SMILE",
+	//"LAUGH",
+	//"SMIRK_LEFT",
+	//"SMIRK_RIGHT",
+	"NEUTRAL"
 };
 
 // Extract EEG channel count
 unsigned int channelCount = sizeof(channelList) / sizeof(IEE_DataChannel_t);
 
-// Extract count of facial expressions
-unsigned int facialExpressionCount = sizeof(facialExpressionList) / sizeof(IEE_FacialExpressionAlgo_t);
 
 // Counter for EEG in order to collect samples from a complete second
 float EEGcounter = 0.f; // seconds
 
 // Output streams
 lsl::stream_info streamInfoEEG("EmotivLSL_EEG", "EEG", channelCount, sampleRateEEG, lsl::cf_float32, "source_id");
-lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "VALUE", facialExpressionCount, lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
+lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "VALUE", facialExpressionLabels.size(), lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
 lsl::stream_info streamInfoPerformanceMetrics("EmotivLSL_PerformanceMetrics", "VALUE", 20, lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
 
 // Variables
@@ -274,22 +255,27 @@ int main()
 			{
 				// Extract current event
 				IEE_Event_t eventType = IEE_EmoEngineEventGetType(eEvent); // fills eventType
+				bool eStateUpdated = false;
 
-				// Event tells about added user
-				if (eventType == IEE_UserAdded)
+				// React to event
+				switch (eventType)
 				{
+				case IEE_UserAdded: // event tells about added user
 					IEE_EmoEngineEventGetUserId(eEvent, &userID);
 					IEE_DataAcquisitionEnable(userID, true);
 					readyToCollect = true;
 					std::cout << "User Successfully Added" << std::endl;
-				} // TODO: what to do when user removed etc
+					break;
 
-				// Check emotiv state
-				bool eStateUpdated = false;
-				if (eventType == IEE_EmoStateUpdated)
-				{
+				case IEE_UserRemoved: // event tells about removed user
+					readyToCollect = false;
+					std::cout << "User Removed" << std::endl;
+					break;
+
+				case IEE_EmoStateUpdated: // event tells about updated emo state
 					IEE_EmoEngineEventGetEmoState(eEvent, eState); // fills eState
 					eStateUpdated = true;
+					break;
 				}
 
 				// Since it is ready to collect, do it
@@ -345,14 +331,108 @@ int main()
 					}
 					
 					// Increment eeg counter by sleep time
-					EEGcounter += 1000.f / sleepDurationInMiliseconds;
+					EEGcounter += (1000.f / sleepDurationInMiliseconds);
 
 					// ##########################################
 					// ### FACIAL EXPRESSION STREAM EXECUTION ###
 					// ##########################################
 
-					// TODO
-					// Look at: examples/FacialExpressionDemo
+					// TODO: what about the training stuff in the example code?
+					if (eStateUpdated)
+					{
+						std::vector<float> values;
+
+						// Get face information
+						IEE_FacialExpressionAlgo_t upperFaceType = IS_FacialExpressionGetUpperFaceAction(eState);
+						IEE_FacialExpressionAlgo_t lowerFaceType = IS_FacialExpressionGetLowerFaceAction(eState);
+						float upperFaceAmp = IS_FacialExpressionGetUpperFaceActionPower(eState);
+						float lowerFaceAmp = IS_FacialExpressionGetLowerFaceActionPower(eState);
+
+						// Blink
+						if (IS_FacialExpressionIsBlink(eState))
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Wink left
+						if (IS_FacialExpressionIsLeftWink(eState))
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Wink right
+						if (IS_FacialExpressionIsRightWink(eState))
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Suprise
+						if (upperFaceAmp > 0.0 && upperFaceType == FE_SURPRISE)
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Frown
+						if (upperFaceAmp > 0.0 && upperFaceType == FE_FROWN)
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Clench
+						if (lowerFaceAmp > 0.0 && lowerFaceType = FE_CLENCH)
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Smile
+						if (lowerFaceAmp > 0.0 && lowerFaceType = FE_SMILE)
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Neutral
+						bool neutral = true; // if nothing else is set, set it to neutral
+						for (const float& rValue : values) { if (rValue > 0.f) { neutral = false; break; } }
+						if(neutral)
+						{
+							values.push_back(1.f);
+						}
+						else
+						{
+							values.push_back(0.f);
+						}
+
+						// Push back sample
+						outletFacialExpression.push_sample(values);
+					}
 
 					// #######################################
 					// ### PERFORMANCE METRICS PREPARATION ###
