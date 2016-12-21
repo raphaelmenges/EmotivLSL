@@ -199,7 +199,7 @@ int main()
 		streamInfoFacialExpression.desc().append_child_value("manufacturer", "Emotiv");
 
 		// Save information about facial expressions
-		lsl::xml_element facialExpressions = streamInfoEEG.desc().append_child("channels");
+		lsl::xml_element facialExpressions = streamInfoFacialExpression.desc().append_child("channels");
 		for (auto facialExpressionLabel : facialExpressionLabels)
 		{
 			facialExpressions.append_child("channel")
