@@ -133,9 +133,6 @@ const std::vector<std::string> performanceMetricsLabels
 // Extract EEG channel count
 unsigned int channelCount = sizeof(channelList) / sizeof(IEE_DataChannel_t);
 
-// Counter for EEG in order to collect samples from a complete second
-float EEGcounter = 0.f; // seconds
-
 // Output streams
 lsl::stream_info streamInfoEEG("EmotivLSL_EEG", "EEG", channelCount, sampleRateEEG, lsl::cf_float32, "source_id");
 lsl::stream_info streamInfoFacialExpression("EmotivLSL_FacialExpression", "VALUE", facialExpressionLabels.size(), lsl::IRREGULAR_RATE, lsl::cf_float32, "source_id");
@@ -275,53 +272,45 @@ int main()
 					// ### EEG STREAM EXECUTION ###
 					// ############################
 
-					// Collect data after one seconds
-					if (EEGcounter >= 1.f)
+					// Fetch samples and their count
+					IEE_DataUpdateHandle(0, dataStream); // update data stream
+					unsigned int sampleCount = 0;
+					IEE_DataGetNumberOfSample(dataStream, &sampleCount);
+					std::cout << "EEG Sample Count: " << std::to_string(sampleCount) << std::endl;
+
+					// Proceed when there are samples
+					if (sampleCount != 0)
 					{
-						// Fetch samples and their count
-						IEE_DataUpdateHandle(0, dataStream); // update data stream
-						unsigned int sampleCount = 0;
-						IEE_DataGetNumberOfSample(dataStream, &sampleCount);
-						std::cout << "EEG Sample Count: " << std::to_string(sampleCount) << std::endl; // should be 128
 
-						// Proceed when there are samples
-						if (sampleCount != 0) {
-
-							// Prepare local buffer for data
-							double ** buffer = new double*[channelCount]; // create buffer for channel data
-							for (int i = 0; i < (int)channelCount; i++)
-							{
-								buffer[i] = new double[sampleCount];
-							}
-
-							// Fetch data
-							IEE_DataGetMultiChannels(dataStream, channelList, channelCount, buffer, sampleCount);
-
-							// Output samples to LabStreamingLayer
-							for (int sampleIdx = 0; sampleIdx < (int)sampleCount; sampleIdx++) // go over samples
-							{
-								// Copy data to std vector (some overhead but looks nicer)
-								std::vector<float> values;
-								for (int channelIdx = 0; channelIdx < (int)channelCount; channelIdx++) // go over channels
-								{
-									values.push_back((float)buffer[channelIdx][sampleIdx]);
-								}
-								outletEEG.push_sample(values);
-							}
-
-							// Delete buffer
-							for (int i = 0; i < (int)channelCount; i++)
-							{
-								delete buffer[i];
-							}
-							delete buffer;
+						// Prepare local buffer for data
+						double ** buffer = new double*[channelCount]; // create buffer for channel data
+						for (int i = 0; i < (int)channelCount; i++)
+						{
+							buffer[i] = new double[sampleCount];
 						}
 
-						EEGcounter -= 1.f;
+						// Fetch data
+						IEE_DataGetMultiChannels(dataStream, channelList, channelCount, buffer, sampleCount);
+
+						// Output samples to LabStreamingLayer
+						for (int sampleIdx = 0; sampleIdx < (int)sampleCount; sampleIdx++) // go over samples
+						{
+							// Copy data to std vector (some overhead but looks nicer)
+							std::vector<float> values;
+							for (int channelIdx = 0; channelIdx < (int)channelCount; channelIdx++) // go over channels
+							{
+								values.push_back((float)buffer[channelIdx][sampleIdx]);
+							}
+							outletEEG.push_sample(values);
+						}
+
+						// Delete buffer
+						for (int i = 0; i < (int)channelCount; i++)
+						{
+							delete buffer[i];
+						}
+						delete buffer;
 					}
-					
-					// Increment eeg counter by sleep time
-					EEGcounter += (1000.f / sleepDurationInMiliseconds);
 
 					// ##########################################
 					// ### FACIAL EXPRESSION STREAM EXECUTION ###
