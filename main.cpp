@@ -31,6 +31,7 @@
 #include "Iedk.h"
 #include "IEegData.h"
 #include "IedkErrorCode.h"
+#include "IEmoStatePerformanceMetric.h"
 
 // Including for LabStreamingLayer
 #include "lsl_cpp.h"
@@ -347,16 +348,16 @@ int main()
 						values.push_back(IS_FacialExpressionIsRightWink(eState) ? 1.f : 0.f);
 
 						// Suprise
-						values.push_back((upperFaceAmp > 0.0 && upperFaceType == FE_SURPRISE) ? 1.f : 0.f);
+						values.push_back((upperFaceAmp > 0.f && upperFaceType == FE_SURPRISE) ? 1.f : 0.f);
 
 						// Frown
-						values.push_back((upperFaceAmp > 0.0 && upperFaceType == FE_FROWN) ? 1.f : 0.f);
+						values.push_back((upperFaceAmp > 0.f && upperFaceType == FE_FROWN) ? 1.f : 0.f);
 
 						// Clench
-						values.push_back((lowerFaceAmp > 0.0 && lowerFaceType = FE_CLENCH) ? 1.f : 0.f);
+						values.push_back((lowerFaceAmp > 0.f && lowerFaceType == FE_CLENCH) ? 1.f : 0.f);
 
 						// Smile
-						values.push_back((lowerFaceAmp > 0.0 && lowerFaceType = FE_SMILE) ? 1.f : 0.f);
+						values.push_back((lowerFaceAmp > 0.f && lowerFaceType == FE_SMILE) ? 1.f : 0.f);
 
 						// Neutral
 						bool neutral = true; // if nothing else is set, set neutral to one
@@ -372,11 +373,14 @@ int main()
 
 						// Push back sample
 						outletFacialExpression.push_sample(values);
+
+						// Tell user on console
+						std::cout << "Facial Expression Sample collected" << std::endl;
 					}
 
-					// #######################################
-					// ### PERFORMANCE METRICS PREPARATION ###
-					// #######################################
+					// ############################################
+					// ### PERFORMANCE METRICS STREAM EXECUTION ###
+					// ############################################
 
 					if (eStateUpdated)
 					{
@@ -389,84 +393,87 @@ int main()
 						// Stress
 						IS_PerformanceMetricGetStressModelParams(eState, &rawScore, &minScale,
 							&maxScale);
-						values.push_back(rawScore);
-						values.push_back(minScale);
-						values.push_back(maxScale);
+						values.push_back((float)rawScore);
+						values.push_back((float)minScale);
+						values.push_back((float)maxScale);
 						if (minScale == maxScale)
 						{
-							values.push_back(std::numeric_limits<double>::quiet_NaN());
+							values.push_back(std::numeric_limits<float>::quiet_NaN());
 						}
 						else
 						{
 							CaculateScale(rawScore, maxScale, minScale, scaledScore);
-							values.push_back(scaledScore);
+							values.push_back((float)scaledScore);
 						}
 
 						// Boredom
 						IS_PerformanceMetricGetEngagementBoredomModelParams(eState, &rawScore,
 							&minScale, &maxScale);
-						values.push_back(rawScore);
-						values.push_back(minScale);
-						values.push_back(maxScale);
+						values.push_back((float)rawScore);
+						values.push_back((float)minScale);
+						values.push_back((float)maxScale);
 						if (minScale == maxScale)
 						{
-							values.push_back(std::numeric_limits<double>::quiet_NaN());
+							values.push_back(std::numeric_limits<float>::quiet_NaN());
 						}
 						else
 						{
 							CaculateScale(rawScore, maxScale, minScale, scaledScore);
-							values.push_back(scaledScore);
+							values.push_back((float)scaledScore);
 						}
 
 						// Relaxation
 						IS_PerformanceMetricGetRelaxationModelParams(eState, &rawScore,
 							&minScale, &maxScale);
-						values.push_back(rawScore);
-						values.push_back(minScale);
-						values.push_back(maxScale);
+						values.push_back((float)rawScore);
+						values.push_back((float)minScale);
+						values.push_back((float)maxScale);
 						if (minScale == maxScale)
 						{
-							values.push_back(std::numeric_limits<double>::quiet_NaN());
+							values.push_back(std::numeric_limits<float>::quiet_NaN());
 						}
 						else
 						{
 							CaculateScale(rawScore, maxScale, minScale, scaledScore);
-							values.push_back(scaledScore);
+							values.push_back((float)scaledScore);
 						}
 
 						// Excitement
 						IS_PerformanceMetricGetInstantaneousExcitementModelParams(eState,
 							&rawScore, &minScale,
 							&maxScale);
-						values.push_back(rawScore);
-						values.push_back(minScale);
-						values.push_back(maxScale);
+						values.push_back((float)rawScore);
+						values.push_back((float)minScale);
+						values.push_back((float)maxScale);
 						if (minScale == maxScale)
 						{
-							values.push_back(std::numeric_limits<double>::quiet_NaN());
+							values.push_back(std::numeric_limits<float>::quiet_NaN());
 						}
 						else {
 							CaculateScale(rawScore, maxScale, minScale, scaledScore);
-							values.push_back(scaledScore);
+							values.push_back((float)scaledScore);
 						}
 
 						// Interest
 						IS_PerformanceMetricGetInterestModelParams(eState, &rawScore,
 							&minScale, &maxScale);
-						values.push_back(rawScore);
-						values.push_back(minScale);
-						values.push_back(maxScale);
+						values.push_back((float)rawScore);
+						values.push_back((float)minScale);
+						values.push_back((float)maxScale);
 						if (minScale == maxScale)
 						{
-							values.push_back(std::numeric_limits<double>::quiet_NaN());
+							values.push_back(std::numeric_limits<float>::quiet_NaN());
 						}
 						else {
 							CaculateScale(rawScore, maxScale, minScale, scaledScore);
-							values.push_back(scaledScore);
+							values.push_back((float)scaledScore);
 						}
 
 						// Push back sample
 						outletPerformanceMetrics.push_sample(values);
+
+						// Tell user on console
+						std::cout << "Performance Metrics Sample collected" << std::endl;
 					}
 
 					// #############
